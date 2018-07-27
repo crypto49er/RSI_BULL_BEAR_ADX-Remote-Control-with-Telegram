@@ -1,6 +1,6 @@
 # RSI_BULL_BEAR_ADX-Remote-Control-with-Telegram
 
-This modified version will let you know remotely control when Gekko will buy and sell and also let you modify the RSI settings so you can make changes to your strategy live.
+This modified version will let you know remotely control when Gekko will buy and sell and also let you modify the RSI settings so you can make changes to your strategy live. (Works with Gekko 0.6x)
 
 1. Replace log.js in gekko/core folder.
 2. Replace telegrambot.js in the gekko/plugins folder.
