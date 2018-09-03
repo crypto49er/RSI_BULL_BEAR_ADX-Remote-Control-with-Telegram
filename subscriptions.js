@@ -95,7 +95,7 @@ var subscriptions = [
     handler: 'processRoundtrip'
   },
   {
-    emitter: ['telegrambot'],
+    emitter: 'telegrambot',
     event: 'command',
     handler: 'processCommand'
   }
