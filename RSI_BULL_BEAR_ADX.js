@@ -13,10 +13,23 @@
 */
 
 // req's
-var log = require('../core/log.js');
-var config = require('../core/util.js').getConfig();
-var store = config.currentIndicatorValues;
-var maSlow, maFast, rsi, adx, advised = false, counter = 0;
+const log = require('../core/log.js');
+const config = require('../core/util.js').getConfig();
+const store = config.currentIndicatorValues;
+const CandleBatcher = require('../core/candleBatcher');
+const RSI = require('../strategies/indicators/RSI.js');
+const SMA = require('../strategies/indicators/SMA.js');
+const ADX = require('../strategies/indicators/ADX.js');
+
+var maSlow = new SMA(config.RSI_BULL_BEAR_ADX_TF.SMA.long);
+var maFast = new SMA(config.RSI_BULL_BEAR_ADX_TF.SMA.short);
+
+var BULL_RSI = new RSI({interval: config.RSI_BULL_BEAR_ADX_TF.BULL.rsi});
+var BEAR_RSI = new RSI({interval: config.RSI_BULL_BEAR_ADX_TF.BEAR.rsi});
+
+var myADX = new ADX(config.RSI_BULL_BEAR_ADX_TF.ADX.adx);
+
+var rsi, adx, advised = false, counter = 0;
 var countdownForCheckIn = 288; // 288 - 5 Minute candles = 1 day
 
 // strategy
@@ -39,22 +52,28 @@ var strat = {
 		// config.debug = false;
 		
 		// SMA
-		this.addIndicator('maSlow', 'SMA', this.settings.SMA.long );
-		this.addIndicator('maFast', 'SMA', this.settings.SMA.short );
+		// this.addIndicator('maSlow', 'SMA', this.settings.SMA.long );
+		// this.addIndicator('maFast', 'SMA', this.settings.SMA.short );
 		
 		// RSI
-		this.addIndicator('BULL_RSI', 'RSI', { interval: this.settings.BULL.rsi });
-		this.addIndicator('BEAR_RSI', 'RSI', { interval: this.settings.BEAR.rsi });
+		// this.addIndicator('BULL_RSI', 'RSI', { interval: this.settings.BULL.rsi });
+		// this.addIndicator('BEAR_RSI', 'RSI', { interval: this.settings.BEAR.rsi });
 		
 		// ADX
-		this.addIndicator('ADX', 'ADX', this.settings.ADX.adx );
+		//this.addIndicator('ADX', 'ADX', this.settings.ADX.adx );
 		
 		// MOD (RSI modifiers)
-		this.BULL_MOD_high = this.settings.BULL.mod_high;
-		this.BULL_MOD_low = this.settings.BULL.mod_low;
-		this.BEAR_MOD_high = this.settings.BEAR.mod_high;
-		this.BEAR_MOD_low = this.settings.BEAR.mod_low;
+		this.BULL_MOD_high = config.RSI_BULL_BEAR_ADX_TF.BULL.mod_high;
+		this.BULL_MOD_low = config.RSI_BULL_BEAR_ADX_TF.BULL.mod_low;
+		this.BEAR_MOD_high = config.RSI_BULL_BEAR_ADX_TF.BEAR.mod_high;
+		this.BEAR_MOD_low = config.RSI_BULL_BEAR_ADX_TF.BEAR.mod_low;
 		
+		// Create batcher - Put in candle size here
+		this.batcher = new CandleBatcher(5);
+
+		// Supply callback when batcher is full
+		this.batcher.on('candle', this.updateBatcher);
+
 		
 		// debug stuff
 		this.startTime = new Date();
@@ -77,7 +96,7 @@ var strat = {
 		log.info("Make sure your warmup period matches SMA_long and that Gekko downloads data if needed");
 		
 		// warn users
-		if( this.requiredHistory < this.settings.SMA_long )
+		if( this.requiredHistory < config.RSI_BULL_BEAR_ADX_TF.SMA.long )
 		{
 			log.warn("*** WARNING *** Your Warmup period is lower then SMA_long. If Gekko does not download data automatically when running LIVE the strategy will default to BEAR-mode until it has enough data.");
 		}
@@ -119,8 +138,20 @@ var strat = {
 		}
 	},
 	
-	update: function(){
+	update: function(candle){
 		if (counter <= this.requiredHistory) counter++;
+
+		this.batcher.write([candle]);
+		this.batcher.flush();
+
+	},
+
+	updateBatcher: function(candle){
+		maSlow.update(candle.close);
+		maFast.update(candle.close);
+		BULL_RSI.update(candle);
+		BEAR_RSI.update(candle);
+		myADX.update(candle);
 	},
 	
 	/* CHECK */
@@ -129,9 +160,7 @@ var strat = {
 		// get all indicators
 		let ind = this.indicators;
 
-			maSlow = ind.maSlow.result;
-			maFast = ind.maFast.result;
-			adx = ind.ADX.result;
+			adx = myADX.result;
 
 		countdownForCheckIn--;
 
@@ -142,9 +171,9 @@ var strat = {
 			
 		// BEAR TREND
 		// NOTE: maFast will always be under maSlow if maSlow can't be calculated
-		if( maFast < maSlow )
+		if( maFast.result < maSlow.result )
 		{
-			rsi = ind.BEAR_RSI.result;
+			rsi = BEAR_RSI.result;
 			let rsi_hi = this.settings.BEAR.high,
 				rsi_low = this.settings.BEAR.low;
 			
@@ -154,7 +183,7 @@ var strat = {
 				
 			if( rsi > rsi_hi && advised){
 				var message = 'Selling During Bear Trend\n\nFast SMA: ' +
-				maFast + '\nSlow SMA: ' + maSlow +
+				maFast.result + '\nSlow SMA: ' + maSlow.result +
 				'\n\nSlow SMA above Fast SMA, indicating bear trend. \n\nCurrent RSI is ' +
 				rsi + ' , which is higher than the bear RSI high of ' +
 				this.settings.BEAR.high + '\n\nBuy Price: ' + store.buyPrice + 
@@ -165,7 +194,7 @@ var strat = {
 			}
 			else if( rsi < rsi_low && !advised) {
 				var message = 'Buying During Bear Trend\n\nFast SMA: ' +
-				maFast + '\nSlow SMA: ' + maSlow +
+				maFast.result + '\nSlow SMA: ' + maSlow.result +
 				'\n\nSlow SMA above Fast SMA, indicating bear trend. \n\nCurrent RSI is ' +
 				rsi + ' , which is lower than the bear RSI low of ' +
 				this.settings.BEAR.low + '\n\nBuy Price: ' + candle.close;
@@ -181,7 +210,7 @@ var strat = {
 		// BULL TREND
 		else
 		{
-			rsi = ind.BULL_RSI.result;
+			rsi = BULL_RSI.result;
 			let rsi_hi = this.settings.BULL.high,
 				rsi_low = this.settings.BULL.low;
 			
@@ -191,7 +220,7 @@ var strat = {
 				
 			if( rsi > rsi_hi && advised) {
 				var message = 'Selling During Bull Trend\n\nFast SMA: ' +
-				maFast + '\nSlow SMA: ' + maSlow +
+				maFast.result + '\nSlow SMA: ' + maSlow.result +
 				'\n\nSlow SMA below Fast SMA, indicating bull trend. \n\nCurrent RSI is ' +
 				rsi + ' , which is higher than the bull RSI high of ' +
 				this.settings.BULL.high + '\n\nBuy Price: ' + store.buyPrice + 
@@ -202,7 +231,7 @@ var strat = {
 			}
 			else if( rsi < rsi_low && !advised)  {
 				var message = 'Buying During Bull Trend\n\nFast SMA: ' +
-				maFast + '\nSlow SMA: ' + maSlow +
+				maFast.result + '\nSlow SMA: ' + maSlow.result +
 				'\n\nSlow SMA below Fast SMA, indicating bull trend. \n\nCurrent RSI is ' +
 				rsi + ' , which is lower than the bull RSI low of ' +
 				this.settings.BULL.low + '\n\nBuy Price: ' + candle.close;
@@ -227,10 +256,10 @@ var strat = {
         }
         if (command == 'status') {
             cmd.handled = true;
-            log.info(maFast, maSlow, rsi);
+            log.info(maFast.result, maSlow.result, rsi);
             //log.info(counter, this.requiredHistory);
             if (counter > this.requiredHistory) { // need to take this out or add counter
-                if (maFast < maSlow) {
+                if (maFast.result < maSlow.result) {
                     if (advised)
                     cmd.response = "We're currently in a bear trend. Bear RSI = " + rsi + "\nWill sell when RSI > " + this.settings.BEAR.high;
                     else cmd.response = "We're currently in a bear trend. Bear RSI = " + rsi + "\nWill buy when RSI < " + this.settings.BEAR.low;
