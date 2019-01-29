@@ -37,7 +37,6 @@ var Base = function(settings) {
   this.settings = settings;
   this.tradingAdvisor = config.tradingAdvisor;
   // defaults
-  this.requiredHistory = 0;
   this.priceValue = 'close';
   this.indicators = {};
   this.asyncTick = false;
@@ -66,11 +65,16 @@ var Base = function(settings) {
   if(!this.onTrade)
     this.onTrade = function() {};
 
-  if(!this.onCommand)
-  this.onCommand = function() {};
+    if(!this.onCommand)
+    this.onCommand = function() {};
 
   // let's run the implemented starting point
   this.init();
+
+  //if no requiredHistory was provided, set default from tradingAdvisor
+  if (!_.isNumber(this.requiredHistory)){
+    this.requiredHistory = config.tradingAdvisor.historySize;
+  }
 
   if(!config.debug || !this.log)
     this.log = function() {};
@@ -177,6 +181,18 @@ Base.prototype.propogateTick = function(candle) {
   const indicators = {};
   _.each(this.indicators, (indicator, name) => {
     indicators[name] = indicator.result;
+  });
+  
+  _.each(this.tulipIndicators, (indicator, name) => {
+    indicators[name] = indicator.result.result
+      ? indicator.result.result
+      : indicator.result;
+  });
+
+  _.each(this.talibIndicators, (indicator, name) => {
+    indicators[name] = indicator.result.outReal
+      ? indicator.result.outReal
+      : indicator.result;
   });
 
   this.emit('stratUpdate', {

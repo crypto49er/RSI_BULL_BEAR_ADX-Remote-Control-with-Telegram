@@ -47,25 +47,18 @@ Log.prototype = {
 
     var message = moment().format('YYYY-MM-DD HH:mm:ss');
     message += ' (' + name + '):\t';
-    var rawMessage = fmt.apply(null, args);
-    message += rawMessage;
-
+    message += fmt.apply(null, args);
     if (method == 'remote')
     {
       // mirror remote output to info 
       this.output['info'](message);
       _.each(this.remoteLoggers, function(logger) {
-        logger.logRemote(rawMessage);
+        logger.logRemote(message);
       });
-    } else if (method == 'warn' || method == 'error') {
-    this.output[method](message);
-    _.each(this.remoteLoggers, function(logger) {
-      logger.logRemote(rawMessage); 
-      });
-    }
-    else
+    } 
+    else 
     {
-      this.output[method](message);
+    this.output[method](message);
     }
   },
   error: function() {
@@ -80,7 +73,7 @@ Log.prototype = {
   remote: function() {
     this._write('remote', arguments);
   },
-  write: function() {
+    write: function() {
     var args = _.toArray(arguments);
     var message = fmt.apply(null, args);
     this.output.info(message);

@@ -60,11 +60,11 @@ Actor.prototype.setupStrategy = function() {
 
   this.strategy = new WrappedStrategy(stratSettings);
   this.strategy
-    .on('advice', this.relayAdvice)
     .on(
       'stratWarmupCompleted',
       e => this.deferredEmit('stratWarmupCompleted', e)
     )
+    .on('advice', this.relayAdvice)
     .on(
       'stratUpdate',
       e => this.deferredEmit('stratUpdate', e)
@@ -92,14 +92,15 @@ Actor.prototype.processCandle = function(candle, done) {
     this.next = done;
   } else {
     done();
-    this.next = _.noop;
+    this.next = false;
   }
   this.batcher.flush();
 }
 
 // propogate a custom sized candle to the trading strategy
 Actor.prototype.emitStratCandle = function(candle) {
-  this.strategy.tick(candle, this.next);
+  const next = this.next || _.noop;
+  this.strategy.tick(candle, next);
 }
 
 Actor.prototype.processTradeCompleted = function(trade) {
